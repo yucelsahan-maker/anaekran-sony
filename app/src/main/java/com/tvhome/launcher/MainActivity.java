@@ -9,6 +9,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -65,6 +66,10 @@ public class MainActivity extends Activity {
     private static final String[] BG_NAMES = {
             "Gece mavisi", "Siyah", "Mor", "Yesil", "Kirmizi", "Gun batimi"
     };
+    // Ilk satirin ekrandaki dikey yeri: ust bosluk / alt bosluk orani.
+    // TOP_WEIGHT'i buyutursan satir asagi iner, kucultursen yukari cikar.
+    private static final float TOP_WEIGHT = 3f;
+    private static final float BOTTOM_WEIGHT = 2f;
     // =============================================
 
     private static final int MATCH = ViewGroup.LayoutParams.MATCH_PARENT;
@@ -310,20 +315,28 @@ public class MainActivity extends Activity {
         date.setTextSize(22);
         content.addView(date, new LinearLayout.LayoutParams(WRAP, WRAP));
 
-        scroller = new ScrollView(this);
+        View topSpacer = new View(this);
+        content.addView(topSpacer, new LinearLayout.LayoutParams(MATCH, 0, TOP_WEIGHT));
+
+        // Sadece 1 satirlik pencere: ilk 5 uygulama gorunur, asagi inince siradaki satir gelir.
+        scroller = new ScrollView(this) {
+            @Override
+            protected int computeScrollDeltaToGetChildRectOnScreen(Rect rect) {
+                return 0; // kaydirmayi satir satir biz yapiyoruz
+            }
+        };
         scroller.setVerticalScrollBarEnabled(false);
         scroller.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        scroller.setClipChildren(false);
-        scroller.setClipToPadding(false);
 
         row = new GridLayout(this);
         row.setColumnCount(COLS);
         row.setClipChildren(false);
-        row.setPadding(dp(8), dp(12), dp(8), dp(24));
+        row.setPadding(dp(8), dp(12), dp(8), 0);
         scroller.addView(row, new FrameLayout.LayoutParams(MATCH, WRAP));
-        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(MATCH, 0, 1f);
-        slp.topMargin = dp(8);
-        content.addView(scroller, slp);
+        content.addView(scroller, new LinearLayout.LayoutParams(MATCH, dp(tileH + 60)));
+
+        View bottomSpacer = new View(this);
+        content.addView(bottomSpacer, new LinearLayout.LayoutParams(MATCH, 0, BOTTOM_WEIGHT));
 
         // Sag ustteki hizli ayar butonlari
         LinearLayout topBar = new LinearLayout(this);
@@ -560,6 +573,20 @@ public class MainActivity extends Activity {
             row.addView(tile);
         }
 
+        row.post(() -> {
+            if (row.getChildCount() > 0) {
+                int h = row.getChildAt(0).getHeight();
+                if (h > 0) {
+                    ViewGroup.LayoutParams lp = scroller.getLayoutParams();
+                    int want = h + dp(12);
+                    if (lp.height != want) {
+                        lp.height = want;
+                        scroller.setLayoutParams(lp);
+                    }
+                }
+            }
+        });
+
         if (row.getChildCount() > 0) {
             View first = row.getChildAt(0);
             for (View b : topButtons) {
@@ -571,6 +598,13 @@ public class MainActivity extends Activity {
             }
             target.requestFocus();
         }
+    }
+
+    private void snapToRow(View tile) {
+        if (scroller == null || row == null) return;
+        int target = tile.getTop() - row.getPaddingTop();
+        if (target < 0) target = 0;
+        scroller.smoothScrollTo(0, target);
     }
 
     private View makeTile(Drawable art, boolean isBanner, final String label, final Intent launchIntent, final String pkg) {
@@ -616,6 +650,9 @@ public class MainActivity extends Activity {
         col.setOnFocusChangeListener((v, hasFocus) -> {
             float s = hasFocus ? 1.12f : 1f;
             col.setTranslationZ(hasFocus ? dp(12) : 0f);
+            if (hasFocus) {
+                scroller.post(() -> snapToRow(col));
+            }
             card.animate().scaleX(s).scaleY(s).setDuration(120).start();
             tv.animate().alpha(hasFocus ? 1f : 0f).setDuration(120).start();
             cardBg.setColor(hasFocus ? 0x66FFFFFF : 0x33FFFFFF);
